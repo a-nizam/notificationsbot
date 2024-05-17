@@ -12,22 +12,36 @@ type notificationsDB struct {
 	conn     *sql.DB
 }
 
-type tgbot struct {
+type tgBot struct {
 	bot *tgbotapi.BotAPI
+}
+
+type chat struct {
+	id     int
+	chatId int
+}
+
+type notification struct {
+	id           int
+	notification string
+	datetime     string
 }
 
 func (db *notificationsDB) Init(filename string) error {
 	db.filename = filename
 	var err error
 	db.conn, err = sql.Open("sqlite3", db.filename)
+	return err
+}
+
+func (db *notificationsDB) Close() {
+	err := db.conn.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	return nil
 }
 
-func (bot *tgbot) Init() {
+func (bot *tgBot) Init() {
 	var err error
 	bot.bot, err = tgbotapi.NewBotAPI("6431929745:AAFcT3VHztJ5gSK5CXTjFTlB1x3H1UlQAC0")
 	if err != nil {
@@ -47,6 +61,6 @@ func (bot *tgbot) Init() {
 }
 
 func main() {
-	myTgbot := &tgbot{}
+	myTgbot := &tgBot{}
 	myTgbot.Init()
 }
