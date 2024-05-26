@@ -1,49 +1,28 @@
 package main
 
 import (
-	"database/sql"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
+	"main/helper"
+	"strings"
+	"time"
 )
-
-type notificationsDB struct {
-	filename string
-	conn     *sql.DB
-}
 
 type tgBot struct {
 	bot *tgbotapi.BotAPI
 }
 
-type chat struct {
-	id     int
-	chatId int
-}
-
-type notification struct {
-	id           int
-	notification string
-	datetime     string
-}
-
-func (db *notificationsDB) Init(filename string) error {
-	db.filename = filename
-	var err error
-	db.conn, err = sql.Open("sqlite3", db.filename)
-	return err
-}
-
-func (db *notificationsDB) Close() {
-	err := db.conn.Close()
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
 func (bot *tgBot) Init() {
+	sendMessage := func(id int64, text string) {
+		msg := tgbotapi.NewMessage(id, text)
+		_, err := bot.bot.Send(msg)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 	var err error
-	bot.bot, err = tgbotapi.NewBotAPI("6431929745:AAFcT3VHztJ5gSK5CXTjFTlB1x3H1UlQAC0")
+	bot.bot, err = tgbotapi.NewBotAPI("243190873:AAGQZxq2Vttvdbo2egkFjNVIqxEgYaDvf-Y")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,10 +36,32 @@ func (bot *tgBot) Init() {
 			continue
 		}
 		//update.Message.Chat.ID
+		words := strings.Split(update.Message.Text, " ")
+		command := words[0]
+		text := strings.Join(words[1:], " ")
+		switch command {
+		case "напомнить":
+			notificationDb := helper.NotificationsDB{}
+			err = notificationDb.Init("data.db")
+			if err != nil {
+				log.Fatal(err)
+			}
+			id, err := notificationDb.InsertChat(helper.Chat{ChatId: update.Message.Chat.ID})
+			if err != nil {
+				log.Fatal(err)
+			}
+			_, err = notificationDb.InsertNotification(helper.Notification{Notification: text, Datetime: time.Now().String(), ChatId: id})
+			if err != nil {
+				log.Fatal(err)
+			}
+			sendMessage(update.Message.Chat.ID, "Напоминание успешно добавлено")
+		default:
+			sendMessage(update.Message.Chat.ID, "Введите \"напомнить текст\"")
+		}
 	}
 }
 
 func main() {
-	myTgbot := &tgBot{}
-	myTgbot.Init()
+	myTgBot := &tgBot{}
+	myTgBot.Init()
 }
