@@ -5,12 +5,18 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"main/helper"
-	"strings"
 	"time"
 )
 
 type tgBot struct {
-	bot *tgbotapi.BotAPI
+	bot      *tgbotapi.BotAPI
+	keyboard tgbotapi.InlineKeyboardMarkup
+	action   Action
+}
+
+type Action struct {
+	chatId int64
+	action string
 }
 
 func (bot *tgBot) Init() {
@@ -20,6 +26,10 @@ func (bot *tgBot) Init() {
 		if err != nil {
 			log.Fatal(err)
 		}
+	}
+	clearAction := func() {
+		bot.action.chatId = 0
+		bot.action.action = ""
 	}
 	var err error
 	bot.bot, err = tgbotapi.NewBotAPI("243190873:AAGQZxq2Vttvdbo2egkFjNVIqxEgYaDvf-Y")
@@ -32,31 +42,56 @@ func (bot *tgBot) Init() {
 	u.Timeout = 60
 	updates := bot.bot.GetUpdatesChan(u)
 	for update := range updates {
-		if update.Message == nil {
-			continue
-		}
-		//update.Message.Chat.ID
-		words := strings.Split(update.Message.Text, " ")
-		command := words[0]
-		text := strings.Join(words[1:], " ")
-		switch command {
-		case "напомнить":
-			notificationDb := helper.NotificationsDB{}
-			err = notificationDb.Init("data.db")
-			if err != nil {
-				log.Fatal(err)
+		if update.Message != nil && update.Message.IsCommand() {
+			switch update.Message.Command() {
+			case "menu":
+				// Создаем клавиатуру
+				bot.keyboard = tgbotapi.NewInlineKeyboardMarkup(
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("Меню напоминаний", "menu"),
+					),
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonData("Создать", "create"),
+						tgbotapi.NewInlineKeyboardButtonData("Список", "list"),
+						tgbotapi.NewInlineKeyboardButtonData("Удалить", "remove"),
+					),
+				)
+
+				// Отправляем сообщение с клавиатурой
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите пункт меню:")
+				msg.ReplyMarkup = bot.keyboard
+				_, err := bot.bot.Send(msg)
+				if err != nil {
+					log.Fatal(err)
+				}
 			}
-			id, err := notificationDb.InsertChat(helper.Chat{ChatId: update.Message.Chat.ID})
-			if err != nil {
-				log.Fatal(err)
+		} else if update.CallbackQuery != nil {
+			data := update.CallbackQuery.Data
+			switch data {
+			case "create":
+				bot.action = Action{update.CallbackQuery.Message.Chat.ID, "create"}
+				sendMessage(update.CallbackQuery.Message.Chat.ID, "Введите текст напоминания")
 			}
-			_, err = notificationDb.InsertNotification(helper.Notification{Notification: text, Datetime: time.Now().String(), ChatId: id})
-			if err != nil {
-				log.Fatal(err)
+		} else {
+			if bot.action.action == "create" && bot.action.chatId == update.Message.Chat.ID {
+				clearAction()
+				notificationDb := helper.NotificationsDB{}
+				err = notificationDb.Init("data.db")
+				if err != nil {
+					log.Fatal(err)
+				}
+				id, err := notificationDb.InsertChat(helper.Chat{ChatId: update.Message.Chat.ID})
+				if err != nil {
+					log.Fatal(err)
+				}
+				_, err = notificationDb.InsertNotification(helper.Notification{Notification: update.Message.Text, Datetime: time.Now().String(), ChatId: id})
+				if err != nil {
+					log.Fatal(err)
+				}
+				sendMessage(update.Message.Chat.ID, "Напоминание успешно добавлено")
+			} else {
+				sendMessage(update.Message.Chat.ID, "Введите \"/menu\" для вызова меню бота")
 			}
-			sendMessage(update.Message.Chat.ID, "Напоминание успешно добавлено")
-		default:
-			sendMessage(update.Message.Chat.ID, "Введите \"напомнить текст\"")
 		}
 	}
 }
